@@ -1,0 +1,48 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: livevault-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Front end + back end em um único container (http://localhost:8000)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: livevault-app
+    env_file:
+      - path: ./backend/.env   # opcional: copie backend/.env.example
+        required: false
+    environment:
+      - DATABASE_URL=sqlite:////data/livevault.db
+      - REDIS_URL=redis://redis:6379/0
+      - RECORDINGS_DIR=/recordings
+    ports:
+      - "127.0.0.1:8000:8000"   # só local; use um proxy com HTTPS + AUTH_ENABLED=true para expor
+    depends_on:
+      - redis
+    volumes:
+      - recordings_data:/recordings
+      - app_data:/data
+    restart: unless-stopped
+
+  # Worker de gravação (FFmpeg) — fica separado de propósito: é um processo longo e pesado
+  recorder:
+    build:
+      context: ./recorder
+    container_name: livevault-recorder
+    env_file:
+      - ./recorder/.env
+    depends_on:
+      - redis
+    volumes:
+      - recordings_data:/recordings
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  recordings_data:
+  app_data:
